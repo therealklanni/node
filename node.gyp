@@ -23,6 +23,13 @@
     'node_core_target_name%': 'node',
     'library_files': [
       'lib/internal/bootstrap_node.js',
+      'lib/internal/loader/Loader.js',
+      'lib/internal/loader/ModuleMap.js',
+      'lib/internal/loader/ModuleJob.js',
+      'lib/internal/loader/resolveRequestUrl.js',
+      'lib/internal/loader/search.js',
+      'lib/internal/loader/index.js',
+      'lib/internal/safe_globals.js',
       'lib/async_hooks.js',
       'lib/assert.js',
       'lib/buffer.js',
@@ -207,7 +214,9 @@
         'src/udp_wrap.cc',
         'src/util.cc',
         'src/uv.cc',
+        'src/loader/module_wrap.cc',
         # headers to make for a more pleasant IDE experience
+        'src/loader/module_wrap.h',
         'src/async-wrap.h',
         'src/async-wrap-inl.h',
         'src/base-object.h',
