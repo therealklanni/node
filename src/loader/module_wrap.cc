@@ -17,7 +17,6 @@ using v8::Module;
 using v8::Value;
 using v8::Isolate;
 using v8::String;
-using v8::TryCatch;
 using v8::FunctionCallbackInfo;
 using v8::Context;
 using v8::JSON;
@@ -93,15 +92,11 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
                             False(iso),
                             True(iso));
     ScriptCompiler::Source source(arg, origin);
-    {
-      TryCatch compileCatch(iso);
-      auto maybe_mod = ScriptCompiler::CompileModule(iso, &source);
-      if (compileCatch.HasCaught()) {
-        compileCatch.ReThrow();
+    auto maybe_mod = ScriptCompiler::CompileModule(iso, &source);
+    if (maybe_mod.IsEmpty()) {
         return;
-      }
-      mod = maybe_mod.ToLocalChecked();
     }
+    maybe_mod.ToLocal(mod);
   }
   auto that = args.This();
   auto ctx = that->CreationContext();
@@ -135,9 +130,7 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
   Local<Module> mod(obj->module_.Get(iso));
 
   // call the dependency resolve callbacks
-  TryCatch linkCatch(iso);
   for (auto i = 0; i < mod->GetModuleRequestsLength(); i++) {
-
     auto specifier = mod->GetModuleRequest(i);
     String::Utf8Value utf8_specifier(specifier);
     std::string std_specifier = *utf8_specifier;
@@ -147,8 +140,7 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
     };
 
     MaybeLocal<Value> maybeResolveReturnValue = resolverArg->Call(that->CreationContext(), that, 1, argv);
-    if (linkCatch.HasCaught()) {
-      linkCatch.ReThrow();
+    if (maybeResolveReturnValue.IsEmpty()) {
       return;
     }
     Local<Value> resolveReturnValue = maybeResolveReturnValue.ToLocalChecked();
@@ -167,18 +159,12 @@ void ModuleWrap::Instantiate(const FunctionCallbackInfo<Value>& args) {
   auto ctx = that->CreationContext();
 
   ModuleWrap* obj = Unwrap<ModuleWrap>(that);
-  TryCatch linkCatch(iso);
-  auto ok = obj->module_.Get(iso)->Instantiate(ctx, ModuleWrap::ResolveCallback);
+  bool ok = obj->module_.Get(iso)->Instantiate(ctx, ModuleWrap::ResolveCallback);
 
   // clear resolve cache on instantiate
   obj->resolve_cache_.clear();
 
-  if (linkCatch.HasCaught()) {
-    linkCatch.ReThrow();
-    return;
-  }
   if (!ok) {
-    env->ThrowError("linking error");
     return;
   }
 }
@@ -188,10 +174,8 @@ void ModuleWrap::Evaluate(const FunctionCallbackInfo<Value>& args) {
   auto that = args.This();
   auto ctx = that->CreationContext();
   ModuleWrap* obj = Unwrap<ModuleWrap>(that);
-  TryCatch evalCatch(iso);
   auto result = obj->module_.Get(iso)->Evaluate(ctx);
-  if (evalCatch.HasCaught()) {
-    evalCatch.ReThrow();
+  if (result.IsEmpty()) {
     return;
   }
   auto ret = result.ToLocalChecked();
