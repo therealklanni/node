@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "module_wrap.h"
 
 #include "../env.h"
