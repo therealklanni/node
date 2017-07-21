@@ -8,6 +8,8 @@
 
 namespace node {
 namespace loader {
+using namespace node::url;
+
 using v8::Local;
 using v8::Persistent;
 using v8::MaybeLocal;
@@ -96,14 +98,18 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
     if (maybe_mod.IsEmpty()) {
         return;
     }
-    maybe_mod.ToLocal(mod);
+    mod = maybe_mod.ToLocalChecked();
   }
   auto that = args.This();
   auto ctx = that->CreationContext();
-  that->Set(ctx, FIXED_ONE_BYTE_STRING(iso, "url"), url);
-  ModuleWrap* obj = new ModuleWrap(node::Environment::GetCurrent(ctx), that, mod, url);
+  if (!that->Set(ctx, FIXED_ONE_BYTE_STRING(iso, "url"), url).FromJust(false)) {
+    return;
+  }
+  ModuleWrap* obj =
+      new ModuleWrap(Environment::GetCurrent(ctx), that, mod, url);
   if (ModuleWrap::module_map_.count(mod->GetIdentityHash()) == 0) {
-    ModuleWrap::module_map_[mod->GetIdentityHash()] = new std::vector<ModuleWrap*>();
+    ModuleWrap::module_map_[mod->GetIdentityHash()] =
+        new std::vector<ModuleWrap*>();
   }
   ModuleWrap::module_map_[mod->GetIdentityHash()]->push_back(obj);
   Wrap(that, obj);
@@ -235,7 +241,7 @@ MaybeLocal<Module> ModuleWrap::ResolveCallback(Local<Context> context,
   return mod->module_.Get(context->GetIsolate());
 }
 
-using namespace node::url;
+namespace {
   URL __init_cwd() {
     std::string specifier = "file://";
     #ifdef _WIN32
@@ -254,7 +260,7 @@ using namespace node::url;
     specifier += "/";
     return URL(specifier);
   }
-  static node::url::URL INITIAL_CWD(__init_cwd());
+  static URL INITIAL_CWD(__init_cwd());
   inline bool is_relative_or_absolute_path(std::string specifier) {
     auto len = specifier.length();
     if (len <= 0) return false;
@@ -382,33 +388,35 @@ using namespace node::url;
     } while (parent.path() != dir.path());
     return URL("");
   }
-  URL Resolve(std::string specifier, URL* base, bool read_pkg_json) {
-    auto pure_url = URL(specifier.c_str());
-    // printf("resolving, %s against %s\n", specifier.c_str(), base->path().c_str());
-    if (!(pure_url.flags() & URL_FLAGS_FAILED)) {
-      return pure_url;
-    }
-    if (specifier.length() == 0) {
-      return URL("");
-    }
-    if (is_relative_or_absolute_path(specifier)) {
-      auto resolved = URL(specifier, base);
-      auto file = resolve_extensions(resolved);
-      if (!(file.flags() & URL_FLAGS_FAILED)) return file;
-      if (specifier.back() != '/') {
-        resolved = URL(specifier + "/", base);
-      }
-      if (read_pkg_json) {
-        auto main = resolve_main(resolved);
-        if (!(main.flags() & URL_FLAGS_FAILED)) return main;
-      }
-      return resolve_index(resolved);
-    }
-    else {
-      return resolve_module(specifier, base);
-    }
+} // anonymous namespace
+
+URL Resolve(std::string specifier, URL* base, bool read_pkg_json) {
+  auto pure_url = URL(specifier.c_str());
+  // printf("resolving, %s against %s\n", specifier.c_str(), base->path().c_str());
+  if (!(pure_url.flags() & URL_FLAGS_FAILED)) {
+    return pure_url;
+  }
+  if (specifier.length() == 0) {
     return URL("");
   }
+  if (is_relative_or_absolute_path(specifier)) {
+    auto resolved = URL(specifier, base);
+    auto file = resolve_extensions(resolved);
+    if (!(file.flags() & URL_FLAGS_FAILED)) return file;
+    if (specifier.back() != '/') {
+      resolved = URL(specifier + "/", base);
+    }
+    if (read_pkg_json) {
+      auto main = resolve_main(resolved);
+      if (!(main.flags() & URL_FLAGS_FAILED)) return main;
+    }
+    return resolve_index(resolved);
+  }
+  else {
+    return resolve_module(specifier, base);
+  }
+  return URL("");
+}
 
 void ModuleWrap::Resolve(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
