@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <limits.h>  // PATH_MAX
+#include <sys/stat.h>  // S_IFDIR
 #include "module_wrap.h"
 
 #include "../env.h"
@@ -339,7 +340,7 @@ inline const struct file_check check_file(URL search,
   }
   if (!allow_dir) {
     uv_fs_fstat(nullptr, &fs_req, fd, nullptr);
-    if (S_ISDIR(fs_req.statbuf.st_mode)) {
+    if (fs_req.statbuf.st_mode & S_IFDIR) {
       uv_fs_close(nullptr, &fs_req, fd, nullptr);
       return ret;
     }
