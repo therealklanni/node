@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits.h>  // PATH_MAX
 #include "module_wrap.h"
 
 #include "../env.h"
@@ -8,6 +9,7 @@
 
 namespace node {
 namespace loader {
+
 using node::url::URL;
 using node::url::URL_FLAGS_FAILED;
 using v8::Local;
@@ -48,9 +50,11 @@ ModuleWrap::~ModuleWrap() {
   auto module = module_.Get(Isolate::GetCurrent());
   auto same_hash = module_map_[module->GetIdentityHash()];
   auto it = std::find(same_hash->begin(), same_hash->end(), this);
+
   if (it != same_hash->end()) {
     same_hash->erase(it);
   }
+
   module_.Reset();
 }
 
@@ -58,10 +62,12 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
 
   Isolate* iso = args.GetIsolate();
+
   if (!args.IsConstructCall()) {
     env->ThrowError("constructor must be called using new");
     return;
   }
+
   if (args.Length() != 2) {
     env->ThrowError("constructor must have exactly 2 arguments "
                     "(string, string)");
@@ -72,15 +78,18 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
     env->ThrowError("first argument is not a string");
     return;
   }
+
   auto source_text = args[0].As<String>();
 
   if (!args[1]->IsString()) {
     env->ThrowError("second argument is not a string");
     return;
   }
+
   Local<String> url = args[1].As<String>();
 
   Local<Module> mod;
+
   // compile
   {
     ScriptOrigin origin(url,
@@ -99,18 +108,23 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
     }
     mod = maybe_mod.ToLocalChecked();
   }
+
   auto that = args.This();
   auto ctx = that->CreationContext();
   auto url_str = FIXED_ONE_BYTE_STRING(iso, "url");
+
   if (!that->Set(ctx, url_str, url).FromMaybe(false)) {
     return;
   }
+
   ModuleWrap* obj =
       new ModuleWrap(Environment::GetCurrent(ctx), that, mod, url);
+
   if (ModuleWrap::module_map_.count(mod->GetIdentityHash()) == 0) {
     ModuleWrap::module_map_[mod->GetIdentityHash()] =
         new std::vector<ModuleWrap*>();
   }
+
   ModuleWrap::module_map_[mod->GetIdentityHash()]->push_back(obj);
   Wrap(that, obj);
 
@@ -187,9 +201,11 @@ void ModuleWrap::Evaluate(const FunctionCallbackInfo<Value>& args) {
   auto ctx = that->CreationContext();
   ModuleWrap* obj = Unwrap<ModuleWrap>(that);
   auto result = obj->module_.Get(iso)->Evaluate(ctx);
+
   if (result.IsEmpty()) {
     return;
   }
+
   auto ret = result.ToLocalChecked();
   args.GetReturnValue().Set(ret);
 }
