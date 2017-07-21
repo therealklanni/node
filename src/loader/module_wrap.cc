@@ -72,14 +72,13 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
     env->ThrowError("first argument is not a string");
     return;
   }
-  auto arg = args[0]->ToString();
-  String::Utf8Value source_text(arg);
+  auto source_text = args[0].As<String>();
 
   if (!args[1]->IsString()) {
     env->ThrowError("second argument is not a string");
     return;
   }
-  Local<String> url = args[1]->ToString();
+  Local<String> url = args[1].As<String>();
 
   Local<Module> mod;
   // compile
@@ -89,11 +88,11 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
                             Integer::New(iso, 0),
                             False(iso),
                             Integer::New(iso, 0),
-                            String::NewFromUtf8(iso, ""),
+                            FIXED_ONE_BYTE_STRING(iso, ""),
                             False(iso),
                             False(iso),
                             True(iso));
-    ScriptCompiler::Source source(arg, origin);
+    ScriptCompiler::Source source(source_text, origin);
     auto maybe_mod = ScriptCompiler::CompileModule(iso, &source);
     if (maybe_mod.IsEmpty()) {
         return;
@@ -102,7 +101,8 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
   }
   auto that = args.This();
   auto ctx = that->CreationContext();
-  if (!that->Set(ctx, FIXED_ONE_BYTE_STRING(iso, "url"), url).FromJust(false)) {
+  auto url_str = FIXED_ONE_BYTE_STRING(iso, "url");
+  if (!that->Set(ctx, url_str, url).FromMaybe(false)) {
     return;
   }
   ModuleWrap* obj =
@@ -138,8 +138,8 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
   // call the dependency resolve callbacks
   for (auto i = 0; i < mod->GetModuleRequestsLength(); i++) {
     auto specifier = mod->GetModuleRequest(i);
-    String::Utf8Value utf8_specifier(specifier);
-    std::string std_specifier = *utf8_specifier;
+    Utf8Value specifier_utf(env->isolate(), specifier);
+    std::string specifier_std(*specifier_utf, specifier_utf.length());
 
     Local<Value> argv[] = {
       specifier
@@ -151,15 +151,14 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
     }
     Local<Value> resolveReturnValue = maybeResolveReturnValue.ToLocalChecked();
     Local<Promise> resolvePromise = Local<Promise>::Cast(resolveReturnValue);
-    obj->resolve_cache_[std_specifier] = new Persistent<Promise>();
-    obj->resolve_cache_[std_specifier]->Reset(iso, resolvePromise);
+    obj->resolve_cache_[specifier_std] = new Persistent<Promise>();
+    obj->resolve_cache_[specifier_std]->Reset(iso, resolvePromise);
   }
 
   args.GetReturnValue().Set(handle_scope.Escape(that));
 }
 
 void ModuleWrap::Instantiate(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
   auto iso = args.GetIsolate();
   auto that = args.This();
   auto ctx = that->CreationContext();
@@ -207,22 +206,20 @@ MaybeLocal<Module> ModuleWrap::ResolveCallback(Local<Context> context,
     }
   }
 
-  String::Utf8Value ss(specifier);
-
   if (dependent == nullptr) {
     env->ThrowError("linking error, null dep");
     return MaybeLocal<Module>();
   }
 
-  String::Utf8Value utf8_specifier(specifier);
-  std::string std_specifier = *utf8_specifier;
+  Utf8Value specifier_utf(env->isolate(), specifier);
+  std::string specifier_std(*specifier_utf, specifier_utf.length());
 
-  if (dependent->resolve_cache_.count(std_specifier) != 1) {
+  if (dependent->resolve_cache_.count(specifier_std) != 1) {
     env->ThrowError("linking error, not in local cache");
     return MaybeLocal<Module>();
   }
 
-  Local<Promise> resolvePromise = dependent->resolve_cache_[std_specifier]->Get(iso);
+  Local<Promise> resolvePromise = dependent->resolve_cache_[specifier_std]->Get(iso);
 
   if (resolvePromise->State() != Promise::kFulfilled) {
     env->ThrowError("linking error, dependency promises must be resolved on instantiate");
@@ -343,23 +340,32 @@ namespace {
     auto check = check_file(pkg);
     if (!check.failed) {
       auto iso = Isolate::GetCurrent();
+      auto ctx = iso->GetCurrentContext();
       auto read = read_file(check.file);
       uv_fs_t fs_req;
       // if we fail to close :-/
       uv_fs_close(nullptr, &fs_req, check.file, nullptr);
       if (read.had_error) return URL("");
-      auto pkg_src = read.source.c_str();
-      auto src = String::NewFromUtf8(iso, pkg_src, String::kNormalString);
-      MaybeLocal<Value> pkg_json = JSON::Parse(iso->GetCurrentContext(), src);
-      if (pkg_json.IsEmpty()) return URL("");
-      Local<String> pkg_main = pkg_json.ToLocalChecked()->ToObject()->Get(String::NewFromUtf8(iso, "main"))->ToString();
-      String::Utf8Value main_utf8(pkg_main);
-      std::string main_std(*main_utf8);
+      std::string pkg_src = read.source;
+      Local<String> src =
+          String::NewFromUtf8(iso, pkg_src.c_str(),
+                              String::kNormalString, pkg_src.length());
+      if (src.IsEmpty()) return URL("");
+      auto maybe_pkg_json = JSON::Parse(ctx, src);
+      if (maybe_pkg_json.IsEmpty()) return URL("");
+      auto pkg_json_obj = maybe_pkg_json.ToLocalChecked().As<Object>();
+      if (!pkg_json_obj->IsObject()) return URL("");
+      auto maybe_pkg_main = pkg_json_obj->Get(
+          ctx, FIXED_ONE_BYTE_STRING(iso, "main"));
+      if (maybe_pkg_main.IsEmpty()) return URL("");
+      auto pkg_main_str = maybe_pkg_main.ToLocalChecked().As<String>();
+      if (!pkg_main_str->IsString()) return URL("");
+      Utf8Value main_utf8(iso, pkg_main_str);
+      std::string main_std(*main_utf8, main_utf8.length());
       if (!is_relative_or_absolute_path(main_std)) {
         main_std.insert(0, "./");
       }
-      URL main = Resolve(main_std, &search);
-      return main;
+      return Resolve(main_std, &search);
     }
     return URL("");
   }
@@ -391,7 +397,7 @@ namespace {
 } // anonymous namespace
 
 URL Resolve(std::string specifier, URL* base, bool read_pkg_json) {
-  auto pure_url = URL(specifier.c_str());
+  URL pure_url(specifier);
   // printf("resolving, %s against %s\n", specifier.c_str(), base->path().c_str());
   if (!(pure_url.flags() & URL_FLAGS_FAILED)) {
     return pure_url;
@@ -400,7 +406,7 @@ URL Resolve(std::string specifier, URL* base, bool read_pkg_json) {
     return URL("");
   }
   if (is_relative_or_absolute_path(specifier)) {
-    auto resolved = URL(specifier, base);
+    URL resolved(specifier, base);
     auto file = resolve_extensions(resolved);
     if (!(file.flags() & URL_FLAGS_FAILED)) return file;
     if (specifier.back() != '/') {
@@ -434,16 +440,14 @@ void ModuleWrap::Resolve(const FunctionCallbackInfo<Value>& args) {
     env->ThrowError("first argument is not a string");
     return;
   }
-  auto specifier_arg = args[0]->ToString();
-  String::Utf8Value specifier_utf(specifier_arg);
+  Utf8Value specifier_utf(env->isolate(), args[0]);
 
   if (!args[1]->IsString()) {
     env->ThrowError("second argument is not a string");
     return;
   }
-  auto url_arg = args[1]->ToString();
-  String::Utf8Value url_utf(url_arg);
-  URL url(*url_utf);
+  Utf8Value url_utf(env->isolate(), args[1]);
+  URL url(*url_utf, url_utf.length());
   // printf("resolving, args.Length() %d %s\n", args.Length(), *url_utf);
   if (url.flags() & URL_FLAGS_FAILED) {
     env->ThrowError("second argument is not a URL string");
@@ -456,9 +460,7 @@ void ModuleWrap::Resolve(const FunctionCallbackInfo<Value>& args) {
     return;
   }
 
-  const Local<Value> ret(result.ToObject(
-    node::Environment::GetCurrent(args)));
-  args.GetReturnValue().Set(ret);
+  args.GetReturnValue().Set(result.ToObject(env));
 }
 
 void ModuleWrap::Initialize(Local<Object> target,
