@@ -879,6 +879,8 @@ jslint:
 	@echo "Running JS linter..."
 	$(NODE) tools/eslint/bin/eslint.js --cache --rulesdir=tools/eslint-rules --ext=.js,.md \
 	  benchmark doc lib test tools
+	$(NODE) tools/eslint/bin/eslint.js --cache --rulesdir=tools/eslint-rules --parser-options=sourceType:module --ext=.mjs \
+	  benchmark doc lib test tools
 
 jslint-ci:
 	@echo "Running JS linter..."
