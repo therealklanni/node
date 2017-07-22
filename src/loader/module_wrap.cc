@@ -478,8 +478,7 @@ void ModuleWrap::Resolve(const FunctionCallbackInfo<Value>& args) {
   Utf8Value specifier_utf(env->isolate(), args[0]);
 
   if (!args[1]->IsString()) {
-    // No base available.
-    env->ThrowError("module not found");
+    env->ThrowError("second argument is not a string");
     return;
   }
   Utf8Value url_utf(env->isolate(), args[1]);
