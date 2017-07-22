@@ -370,7 +370,7 @@ inline URL resolve_index(URL search) {
   return resolve_extensions(URL("index", &search), false);
 }
 URL resolve_main(URL search) {
-  URL pkg = URL("package.json", &search);
+  URL pkg("package.json", &search);
   auto check = check_file(pkg);
   if (!check.failed) {
     auto iso = Isolate::GetCurrent();
@@ -404,7 +404,7 @@ URL resolve_main(URL search) {
   return URL("");
 }
 URL resolve_module(std::string specifier, URL* base) {
-  URL parent = *base;
+  URL parent(".", base);
   URL dir("");
   do {
     dir = parent;
