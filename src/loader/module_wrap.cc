@@ -48,8 +48,8 @@ ModuleWrap::ModuleWrap(Environment* env,
 }
 
 ModuleWrap::~ModuleWrap() {
-  auto module = module_.Get(Isolate::GetCurrent());
-  auto same_hash = module_map_[module->GetIdentityHash()];
+  Local<Module> module = module_.Get(Isolate::GetCurrent());
+  std::vector<ModuleWrap*>* same_hash = module_map_[module->GetIdentityHash()];
   auto it = std::find(same_hash->begin(), same_hash->end(), this);
 
   if (it != same_hash->end()) {
@@ -152,8 +152,8 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
   Local<Module> mod(obj->module_.Get(iso));
 
   // call the dependency resolve callbacks
-  for (auto i = 0; i < mod->GetModuleRequestsLength(); i++) {
-    auto specifier = mod->GetModuleRequest(i);
+  for (int i = 0; i < mod->GetModuleRequestsLength(); i++) {
+    Local<String> specifier = mod->GetModuleRequest(i);
     Utf8Value specifier_utf(env->isolate(), specifier);
     std::string specifier_std(*specifier_utf, specifier_utf.length());
 
@@ -221,7 +221,8 @@ MaybeLocal<Module> ModuleWrap::ResolveCallback(Local<Context> context,
     return MaybeLocal<Module>();
   }
 
-  auto possible_deps = ModuleWrap::module_map_[referrer->GetIdentityHash()];
+  std::vector<ModuleWrap*>* possible_deps =
+      ModuleWrap::module_map_[referrer->GetIdentityHash()];
   ModuleWrap* dependent = nullptr;
 
   for (auto possible_dep : *possible_deps) {
@@ -358,7 +359,7 @@ URL resolve_extensions(URL search, bool check_exact = true) {
     }
   }
   for (auto extension : EXTENSIONS) {
-    auto guess = URL(search.path() + extension, &search);
+    URL guess(search.path() + extension, &search);
     auto check = check_file(guess, true);
     if (!check.failed) {
       return guess;
