@@ -1,4 +1,4 @@
-import '../common';
+/* eslint-disable required-modules */
 
 if (typeof arguments !== 'undefined') {
   throw new Error('not an ESM');
