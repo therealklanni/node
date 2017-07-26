@@ -1,14 +1,14 @@
-#ifndef SRC_LOADER_MODULE_WRAP_H_
-#define SRC_LOADER_MODULE_WRAP_H_
+#ifndef SRC_MODULE_WRAP_H_
+#define SRC_MODULE_WRAP_H_
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
 #include <map>
 #include <string>
 #include <vector>
-#include "../node_url.h"
-#include "../base-object.h"
-#include "../base-object-inl.h"
+#include "node_url.h"
+#include "base-object.h"
+#include "base-object-inl.h"
 
 namespace node {
 namespace loader {
@@ -55,4 +55,4 @@ class ModuleWrap : public BaseObject {
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
-#endif  // SRC_LOADER_MODULE_WRAP_H_
+#endif  // SRC_MODULE_WRAP_H_

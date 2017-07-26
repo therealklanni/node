@@ -3,8 +3,8 @@
 #include <sys/stat.h>  // S_IFDIR
 #include "module_wrap.h"
 
-#include "../env.h"
-#include "../node_url.h"
+#include "env.h"
+#include "node_url.h"
 #include "util.h"
 #include "util-inl.h"
 
