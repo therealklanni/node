@@ -163,6 +163,8 @@ class URL {
     return ret;
   }
 
+  std::string decoded_path();
+
   const Local<Value> ToObject(Environment* env) const;
 
  private:

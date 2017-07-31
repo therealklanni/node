@@ -886,6 +886,17 @@ static url_host_type ParseHost(url_host* host,
   return type;
 }
 
+std::string node::url::URL::decoded_path() {
+  std::string ret;
+  for (auto i = context_.path.begin(); i != context_.path.end(); i++) {
+    ret += '/';
+    std::string tmp;
+    PercentDecode(i->c_str(), i->length(), &tmp);
+    ret += tmp;
+  }
+  return ret;
+}
+
 // Locates the longest sequence of 0 segments in an IPv6 address
 // in order to use the :: compression when serializing
 static inline uint16_t* FindLongestZeroSequence(uint16_t* values,

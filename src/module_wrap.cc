@@ -332,7 +332,7 @@ inline const struct file_check check_file(URL search,
                                           bool allow_dir = false) {
   struct file_check ret;
   uv_fs_t fs_req;
-  uv_fs_open(nullptr, &fs_req, search.path().c_str(), O_RDONLY, 0, nullptr);
+  uv_fs_open(nullptr, &fs_req, search.decoded_path().c_str(), O_RDONLY, 0, nullptr);
   auto fd = fs_req.result;
   if (fd < 0) {
     return ret;
