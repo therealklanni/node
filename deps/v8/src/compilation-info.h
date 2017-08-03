@@ -19,12 +19,13 @@
 namespace v8 {
 namespace internal {
 
+class CoverageInfo;
 class DeclarationScope;
 class DeferredHandles;
 class FunctionLiteral;
-class JavaScriptFrame;
-class ParseInfo;
 class Isolate;
+class JavaScriptFrame;
+class SourceRangeMap;
 class Zone;
 
 // CompilationInfo encapsulates some information known at compile time.  It
@@ -38,42 +39,54 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
     kNonDeferredCalling = 1 << 1,
     kSavesCallerDoubles = 1 << 2,
     kRequiresFrame = 1 << 3,
-    kDeoptimizationSupport = 1 << 4,
-    kAccessorInliningEnabled = 1 << 5,
-    kSerializing = 1 << 6,
-    kFunctionContextSpecializing = 1 << 7,
-    kFrameSpecializing = 1 << 8,
-    kInliningEnabled = 1 << 9,
-    kDisableFutureOptimization = 1 << 10,
-    kSplittingEnabled = 1 << 11,
-    kDeoptimizationEnabled = 1 << 12,
-    kSourcePositionsEnabled = 1 << 13,
-    kBailoutOnUninitialized = 1 << 14,
-    kOptimizeFromBytecode = 1 << 15,
-    kLoopPeelingEnabled = 1 << 16,
+    kAccessorInliningEnabled = 1 << 4,
+    kSerializing = 1 << 5,
+    kFunctionContextSpecializing = 1 << 6,
+    kFrameSpecializing = 1 << 7,
+    kInliningEnabled = 1 << 8,
+    kDisableFutureOptimization = 1 << 9,
+    kSplittingEnabled = 1 << 10,
+    kDeoptimizationEnabled = 1 << 11,
+    kSourcePositionsEnabled = 1 << 12,
+    kBailoutOnUninitialized = 1 << 13,
+    kOptimizeFromBytecode = 1 << 14,
+    kLoopPeelingEnabled = 1 << 15,
+    kBlockCoverageEnabled = 1 << 16,
+    kIsDebug = 1 << 17,
+    kIsEval = 1 << 18,
+    kIsNative = 1 << 19,
   };
 
-  CompilationInfo(Zone* zone, ParseInfo* parse_info, Isolate* isolate,
+  CompilationInfo(Zone* zone, Isolate* isolate, Handle<Script> script,
+                  Handle<SharedFunctionInfo> shared,
                   Handle<JSFunction> closure);
   CompilationInfo(Vector<const char> debug_name, Isolate* isolate, Zone* zone,
                   Code::Flags code_flags);
   ~CompilationInfo();
 
-  ParseInfo* parse_info() const { return parse_info_; }
+  Handle<Script> script() const { return script_; }
 
-  // -----------------------------------------------------------
-  // TODO(titzer): inline and delete accessors of ParseInfo
-  // -----------------------------------------------------------
-  Handle<Script> script() const;
-  FunctionLiteral* literal() const;
+  FunctionLiteral* literal() const { return literal_; }
+  void set_literal(FunctionLiteral* literal) {
+    DCHECK_NOT_NULL(literal);
+    literal_ = literal;
+  }
+
+  SourceRangeMap* source_range_map() const { return source_range_map_; }
+  void set_source_range_map(SourceRangeMap* source_range_map) {
+    source_range_map_ = source_range_map;
+  }
+
   DeclarationScope* scope() const;
-  Handle<SharedFunctionInfo> shared_info() const;
-  bool has_shared_info() const;
-  // -----------------------------------------------------------
 
   Isolate* isolate() const { return isolate_; }
   Zone* zone() { return zone_; }
   bool is_osr() const { return !osr_ast_id_.IsNone(); }
+  Handle<SharedFunctionInfo> shared_info() const { return shared_info_; }
+  void set_shared_info(Handle<SharedFunctionInfo> shared_info) {
+    shared_info_ = shared_info;
+  }
+  bool has_shared_info() const { return !shared_info().is_null(); }
   Handle<JSFunction> closure() const { return closure_; }
   Handle<Code> code() const { return code_; }
   Code::Flags code_flags() const { return code_flags_; }
@@ -90,6 +103,9 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   bool has_bytecode_array() const { return !bytecode_array_.is_null(); }
   Handle<BytecodeArray> bytecode_array() const { return bytecode_array_; }
+
+  bool has_asm_wasm_data() const { return !asm_wasm_data_.is_null(); }
+  Handle<FixedArray> asm_wasm_data() const { return asm_wasm_data_; }
 
   bool is_calling() const {
     return GetFlag(kDeferredCalling) || GetFlag(kNonDeferredCalling);
@@ -113,15 +129,11 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   // Compiles marked as debug produce unoptimized code with debug break slots.
   // Inner functions that cannot be compiled w/o context are compiled eagerly.
-  // Always include deoptimization support to avoid having to recompile again.
-  void MarkAsDebug() {
-    set_is_debug();
-    SetFlag(kDeoptimizationSupport);
-  }
+  void MarkAsDebug() { SetFlag(kIsDebug); }
 
-  bool is_debug() const;
+  bool is_debug() const { return GetFlag(kIsDebug); }
 
-  void PrepareForSerializing();
+  void MarkAsSerializing() { SetFlag(kSerializing); }
 
   bool will_serialize() const { return GetFlag(kSerializing); }
 
@@ -179,10 +191,24 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   bool is_loop_peeling_enabled() const { return GetFlag(kLoopPeelingEnabled); }
 
+  void MarkAsBlockCoverageEnabled() { SetFlag(kBlockCoverageEnabled); }
+
+  bool is_block_coverage_enabled() const {
+    return GetFlag(kBlockCoverageEnabled);
+  }
+
+  void MarkAsEval() { SetFlag(kIsEval); }
+
+  bool is_eval() const { return GetFlag(kIsEval); }
+
+  void MarkAsNative() { SetFlag(kIsNative); }
+
+  bool is_native() const { return GetFlag(kIsNative); }
+
   bool GeneratePreagedPrologue() const {
     // Generate a pre-aged prologue if we are optimizing for size, which
-    // will make code flushing more aggressive. Only apply to Code::FUNCTION,
-    // since StaticMarkingVisitor::IsFlushable only flushes proper functions.
+    // will make code old more aggressive. Only apply to Code::FUNCTION,
+    // since only functions are aged in the compilation cache.
     return FLAG_optimize_for_size && FLAG_age_code && !is_debug() &&
            output_code_kind() == Code::FUNCTION;
   }
@@ -191,6 +217,10 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   void SetBytecodeArray(Handle<BytecodeArray> bytecode_array) {
     bytecode_array_ = bytecode_array;
+  }
+
+  void SetAsmWasmData(Handle<FixedArray> asm_wasm_data) {
+    asm_wasm_data_ = asm_wasm_data;
   }
 
   bool ShouldTrapOnDeopt() const {
@@ -219,16 +249,7 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
   }
 
   // Deoptimization support.
-  bool HasDeoptimizationSupport() const {
-    return GetFlag(kDeoptimizationSupport);
-  }
-  void EnableDeoptimizationSupport() {
-    DCHECK_EQ(BASE, mode_);
-    SetFlag(kDeoptimizationSupport);
-  }
   bool ShouldEnsureSpaceForLazyDeopt() { return !IsStub(); }
-
-  bool ExpectsJSReceiverAsReceiver();
 
   // Determines whether or not to insert a self-optimization header.
   bool ShouldSelfOptimize();
@@ -269,10 +290,14 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   int optimization_id() const { return optimization_id_; }
 
-  int osr_expr_stack_height() { return osr_expr_stack_height_; }
+  int osr_expr_stack_height() {
+    DCHECK_GE(osr_expr_stack_height_, 0);
+    return osr_expr_stack_height_;
+  }
   void set_osr_expr_stack_height(int height) {
-    DCHECK(height >= 0);
+    DCHECK_EQ(osr_expr_stack_height_, -1);
     osr_expr_stack_height_ = height;
+    DCHECK_GE(osr_expr_stack_height_, 0);
   }
 
   bool has_simple_parameters();
@@ -280,18 +305,11 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
   struct InlinedFunctionHolder {
     Handle<SharedFunctionInfo> shared_info;
 
-    // Root that holds the unoptimized code of the inlined function alive
-    // (and out of reach of code flushing) until we finish compilation.
-    // Do not remove.
-    Handle<Code> inlined_code_object_root;
-
     InliningPosition position;
 
     InlinedFunctionHolder(Handle<SharedFunctionInfo> inlined_shared_info,
-                          Handle<Code> inlined_code_object_root,
                           SourcePosition pos)
-        : shared_info(inlined_shared_info),
-          inlined_code_object_root(inlined_code_object_root) {
+        : shared_info(inlined_shared_info) {
       position.position = pos;
       // initialized when generating the deoptimization literals
       position.inlined_function_id = DeoptimizationInputData::kNotInlinedIndex;
@@ -319,18 +337,21 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   SourcePositionTableBuilder::RecordingMode SourcePositionRecordingMode() const;
 
+  bool has_coverage_info() const { return !coverage_info_.is_null(); }
+  Handle<CoverageInfo> coverage_info() const { return coverage_info_; }
+  void set_coverage_info(Handle<CoverageInfo> coverage_info) {
+    coverage_info_ = coverage_info;
+  }
+
  private:
   // Compilation mode.
   // BASE is generated by the full codegen, optionally prepared for bailouts.
   // OPTIMIZE is optimized code generated by the Hydrogen-based backend.
   enum Mode { BASE, OPTIMIZE, STUB };
 
-  CompilationInfo(ParseInfo* parse_info, Vector<const char> debug_name,
+  CompilationInfo(Handle<Script> script, Vector<const char> debug_name,
                   Code::Flags code_flags, Mode mode, Isolate* isolate,
                   Zone* zone);
-
-  ParseInfo* parse_info_;
-  Isolate* isolate_;
 
   void SetMode(Mode mode) { mode_ = mode; }
 
@@ -342,11 +363,16 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
 
   bool GetFlag(Flag flag) const { return (flags_ & flag) != 0; }
 
-  void set_is_debug();
+  Isolate* isolate_;
+  Handle<Script> script_;
+  FunctionLiteral* literal_;
+  SourceRangeMap* source_range_map_;  // Used when block coverage is enabled.
 
   unsigned flags_;
 
   Code::Flags code_flags_;
+
+  Handle<SharedFunctionInfo> shared_info_;
 
   Handle<JSFunction> closure_;
 
@@ -361,6 +387,9 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
   // TODO(rmcilroy/mstarzinger): Temporary work-around until compiler.cc is
   // refactored to avoid us needing to carry the BytcodeArray around.
   Handle<BytecodeArray> bytecode_array_;
+
+  // Holds the asm_wasm array generated by the asmjs compiler.
+  Handle<FixedArray> asm_wasm_data_;
 
   // The zone from which the compilation pipeline working on this
   // CompilationInfo allocates.
@@ -388,6 +417,10 @@ class V8_EXPORT_PRIVATE CompilationInfo final {
   JavaScriptFrame* osr_frame_ = nullptr;
 
   Vector<const char> debug_name_;
+
+  // Encapsulates coverage information gathered by the bytecode generator.
+  // Needs to be stored on the shared function info once compilation completes.
+  Handle<CoverageInfo> coverage_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };

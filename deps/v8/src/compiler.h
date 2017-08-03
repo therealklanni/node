@@ -40,7 +40,6 @@ class ThreadedListZoneEntry;
 class V8_EXPORT_PRIVATE Compiler : public AllStatic {
  public:
   enum ClearExceptionFlag { KEEP_EXCEPTION, CLEAR_EXCEPTION };
-  enum ConcurrencyMode { NOT_CONCURRENT, CONCURRENT };
 
   // ===========================================================================
   // The following family of methods ensures a given function is compiled. The
@@ -55,7 +54,7 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
 
   // Prepare a compilation job for unoptimized code. Requires ParseAndAnalyse.
   static CompilationJob* PrepareUnoptimizedCompilationJob(
-      CompilationInfo* info);
+      ParseInfo* parse_info, CompilationInfo* compilation_info);
 
   // Generate and install code from previously queued compilation job.
   static bool FinalizeCompilationJob(CompilationJob* job);
@@ -69,20 +68,16 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       EagerInnerFunctionLiterals;
 
   // Parser::Parse, then Compiler::Analyze.
-  static bool ParseAndAnalyze(ParseInfo* info, Isolate* isolate);
-  // Convenience function
-  static bool ParseAndAnalyze(CompilationInfo* info);
+  static bool ParseAndAnalyze(ParseInfo* parse_info,
+                              Handle<SharedFunctionInfo> shared_info,
+                              Isolate* isolate);
   // Rewrite, analyze scopes, and renumber. If |eager_literals| is non-null, it
   // is appended with inner function literals which should be eagerly compiled.
-  static bool Analyze(ParseInfo* info, Isolate* isolate,
+  static bool Analyze(ParseInfo* parse_info, Isolate* isolate,
                       EagerInnerFunctionLiterals* eager_literals = nullptr);
-  // Convenience function
-  static bool Analyze(CompilationInfo* info,
-                      EagerInnerFunctionLiterals* eager_literals = nullptr);
-  // Adds deoptimization support, requires ParseAndAnalyze.
-  static bool EnsureDeoptimizationSupport(CompilationInfo* info);
   // Ensures that bytecode is generated, calls ParseAndAnalyze internally.
-  static bool EnsureBytecode(CompilationInfo* info);
+  static bool EnsureBytecode(ParseInfo* parse_info,
+                             CompilationInfo* compilation_info);
 
   // ===========================================================================
   // The following family of methods instantiates new functions for scripts or
@@ -101,6 +96,12 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       int eval_scope_position, int eval_position, int line_offset = 0,
       int column_offset = 0, Handle<Object> script_name = Handle<Object>(),
       ScriptOriginOptions options = ScriptOriginOptions());
+
+  // Returns true if the embedder permits compiling the given source string in
+  // the given context.
+  static bool CodeGenerationFromStringsAllowed(Isolate* isolate,
+                                               Handle<Context> context,
+                                               Handle<String> source);
 
   // Create a (bound) function for a String source within a context for eval.
   MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionFromString(
@@ -164,7 +165,7 @@ class V8_EXPORT_PRIVATE CompilationJob {
     kFailed,
   };
 
-  CompilationJob(Isolate* isolate, CompilationInfo* info,
+  CompilationJob(Isolate* isolate, ParseInfo* parse_info, CompilationInfo* info,
                  const char* compiler_name,
                  State initial_state = State::kReadyToPrepare);
   virtual ~CompilationJob() {}
@@ -201,7 +202,8 @@ class V8_EXPORT_PRIVATE CompilationJob {
     return executed_on_background_thread_;
   }
   State state() const { return state_; }
-  CompilationInfo* info() const { return info_; }
+  ParseInfo* parse_info() const { return parse_info_; }
+  CompilationInfo* compilation_info() const { return compilation_info_; }
   Isolate* isolate() const;
   virtual size_t AllocatedMemory() const { return 0; }
 
@@ -211,12 +213,10 @@ class V8_EXPORT_PRIVATE CompilationJob {
   virtual Status ExecuteJobImpl() = 0;
   virtual Status FinalizeJobImpl() = 0;
 
-  // Registers weak object to optimized code dependencies.
-  // TODO(turbofan): Move this to pipeline.cc once Crankshaft dies.
-  void RegisterWeakObjectsInOptimizedCode(Handle<Code> code);
-
  private:
-  CompilationInfo* info_;
+  // TODO(6409): Remove parse_info once Fullcode and AstGraphBuilder are gone.
+  ParseInfo* parse_info_;
+  CompilationInfo* compilation_info_;
   ThreadId isolate_thread_id_;
   base::TimeDelta time_taken_to_prepare_;
   base::TimeDelta time_taken_to_execute_;

@@ -9,6 +9,7 @@
 #include "src/assembler.h"
 #include "src/codegen.h"
 #include "src/debug/liveedit.h"
+#include "src/frames-inl.h"
 #include "src/objects-inl.h"
 
 namespace v8 {
@@ -117,12 +118,11 @@ void DebugCodegen::GenerateFrameDropperTrampoline(MacroAssembler* masm) {
   __ leave();
 
   __ movp(rbx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
-  __ LoadSharedFunctionInfoSpecialField(
-      rbx, rbx, SharedFunctionInfo::kFormalParameterCountOffset);
+  __ movsxlq(
+      rbx, FieldOperand(rbx, SharedFunctionInfo::kFormalParameterCountOffset));
 
   ParameterCount dummy(rbx);
-  __ InvokeFunction(rdi, no_reg, dummy, dummy, JUMP_FUNCTION,
-                    CheckDebugStepCallWrapper());
+  __ InvokeFunction(rdi, no_reg, dummy, dummy, JUMP_FUNCTION);
 }
 
 const bool LiveEdit::kFrameDropperSupported = true;

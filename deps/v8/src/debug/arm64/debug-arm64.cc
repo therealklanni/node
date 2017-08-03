@@ -6,10 +6,11 @@
 
 #include "src/debug/debug.h"
 
-#include "src/arm64/frames-arm64.h"
 #include "src/arm64/macro-assembler-arm64-inl.h"
 #include "src/codegen.h"
 #include "src/debug/liveedit.h"
+#include "src/frame-constants.h"
+#include "src/frames-inl.h"
 #include "src/objects-inl.h"
 
 namespace v8 {
@@ -154,8 +155,7 @@ void DebugCodegen::GenerateFrameDropperTrampoline(MacroAssembler* masm) {
 
   ParameterCount dummy1(x2);
   ParameterCount dummy2(x0);
-  __ InvokeFunction(x1, dummy1, dummy2, JUMP_FUNCTION,
-                    CheckDebugStepCallWrapper());
+  __ InvokeFunction(x1, dummy1, dummy2, JUMP_FUNCTION);
 }
 
 

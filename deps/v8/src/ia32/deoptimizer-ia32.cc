@@ -6,8 +6,9 @@
 
 #include "src/codegen.h"
 #include "src/deoptimizer.h"
+#include "src/frame-constants.h"
+#include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
-#include "src/ia32/frames-ia32.h"
 #include "src/register-configuration.h"
 #include "src/safepoint-table.h"
 
@@ -166,23 +167,6 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
 }
 
 
-void Deoptimizer::SetPlatformCompiledStubRegisters(
-    FrameDescription* output_frame, CodeStubDescriptor* descriptor) {
-  intptr_t handler =
-      reinterpret_cast<intptr_t>(descriptor->deoptimization_handler());
-  int params = descriptor->GetHandlerParameterCount();
-  output_frame->SetRegister(eax.code(), params);
-  output_frame->SetRegister(ebx.code(), handler);
-}
-
-
-void Deoptimizer::CopyDoubleRegisters(FrameDescription* output_frame) {
-  for (int i = 0; i < XMMRegister::kMaxNumRegisters; ++i) {
-    Float64 double_value = input_->GetDoubleRegister(i);
-    output_frame->SetDoubleRegister(i, double_value);
-  }
-}
-
 #define __ masm()->
 
 void Deoptimizer::TableEntryGenerator::Generate() {
@@ -193,7 +177,7 @@ void Deoptimizer::TableEntryGenerator::Generate() {
 
   const int kDoubleRegsSize = kDoubleSize * XMMRegister::kMaxNumRegisters;
   __ sub(esp, Immediate(kDoubleRegsSize));
-  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
+  const RegisterConfiguration* config = RegisterConfiguration::Default();
   for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
     int code = config->GetAllocatableDoubleCode(i);
     XMMRegister xmm_reg = XMMRegister::from_code(code);
@@ -213,7 +197,8 @@ void Deoptimizer::TableEntryGenerator::Generate() {
 
   __ pushad();
 
-  ExternalReference c_entry_fp_address(Isolate::kCEntryFPAddress, isolate());
+  ExternalReference c_entry_fp_address(IsolateAddressId::kCEntryFPAddress,
+                                       isolate());
   __ mov(Operand::StaticVariable(c_entry_fp_address), ebp);
 
   const int kSavedRegistersAreaSize =

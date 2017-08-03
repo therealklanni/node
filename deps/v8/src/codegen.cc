@@ -17,6 +17,7 @@
 #include "src/debug/debug.h"
 #include "src/eh-frame.h"
 #include "src/objects-inl.h"
+#include "src/parsing/parse-info.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -83,8 +84,8 @@ Comment::~Comment() {
 
 #endif  // DEBUG
 
-
-void CodeGenerator::MakeCodePrologue(CompilationInfo* info, const char* kind) {
+void CodeGenerator::MakeCodePrologue(ParseInfo* parse_info,
+                                     CompilationInfo* info, const char* kind) {
   bool print_ast = false;
   const char* ftype;
 
@@ -96,6 +97,14 @@ void CodeGenerator::MakeCodePrologue(CompilationInfo* info, const char* kind) {
     ftype = "user-defined";
   }
 
+  if (!FLAG_trace_codegen && !print_ast) return;
+
+  // Requires internalizing the AST, so make sure we are on the main thread.
+  DCHECK(ThreadId::Current().Equals(info->isolate()->thread_id()));
+  AllowDeferredHandleDereference allow_deref;
+  AllowHeapAllocation allow_gc;
+  parse_info->ast_value_factory()->Internalize(info->isolate());
+
   if (FLAG_trace_codegen || print_ast) {
     std::unique_ptr<char[]> name = info->GetDebugName();
     PrintF("[generating %s code for %s function: %s]\n", kind, ftype,
@@ -103,14 +112,14 @@ void CodeGenerator::MakeCodePrologue(CompilationInfo* info, const char* kind) {
   }
 
 #ifdef DEBUG
-  if (info->parse_info() && print_ast) {
+  if (!info->IsStub() && print_ast) {
     PrintF("--- AST ---\n%s\n",
            AstPrinter(info->isolate()).PrintProgram(info->literal()));
   }
 #endif  // DEBUG
 }
 
-Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
+Handle<Code> CodeGenerator::MakeCodeEpilogue(TurboAssembler* tasm,
                                              EhFrameWriter* eh_frame_writer,
                                              CompilationInfo* info,
                                              Handle<Object> self_reference) {
@@ -122,7 +131,7 @@ Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
   bool is_crankshafted =
       Code::ExtractKindFromFlags(flags) == Code::OPTIMIZED_FUNCTION ||
       info->IsStub();
-  masm->GetCode(&desc);
+  tasm->GetCode(isolate, &desc);
   if (eh_frame_writer) eh_frame_writer->GetEhFrame(&desc);
 
   Handle<Code> code = isolate->factory()->NewCode(
@@ -186,7 +195,7 @@ static int PrintFunctionSource(CompilationInfo* info,
 }
 
 // Print information for the given inlining: which function was inlined and
-// where the inlining occured.
+// where the inlining occurred.
 static void PrintInlinedFunctionInfo(
     CompilationInfo* info, int source_id, int inlining_id,
     const CompilationInfo::InlinedFunctionHolder& h) {
@@ -243,9 +252,7 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
     OFStream os(tracing_scope.file());
 
     // Print the source code if available.
-    bool print_source =
-        info->parse_info() && (code->kind() == Code::OPTIMIZED_FUNCTION ||
-                               code->kind() == Code::FUNCTION);
+    bool print_source = code->kind() == Code::OPTIMIZED_FUNCTION;
     if (print_source) {
       Handle<SharedFunctionInfo> shared = info->shared_info();
       Handle<Script> script = info->script();
@@ -266,7 +273,7 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
       }
     }
     if (info->IsOptimizing()) {
-      if (FLAG_print_unopt_code && info->parse_info()) {
+      if (FLAG_print_unopt_code) {
         os << "--- Unoptimized code ---\n";
         info->closure()->shared()->code()->Disassemble(debug_name.get(), os);
       }
