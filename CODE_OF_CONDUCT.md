@@ -1,5 +1,3 @@
 # Code of Conduct
 
-The Node.js Code of Conduct document has moved to
-https://github.com/nodejs/TSC/blob/master/CODE_OF_CONDUCT.md. Please update
-links to this document accordingly.
+![Don't be a dick!](https://ih0.redbubble.net/image.104012541.2448/ap,550x550,16x12,1,transparent,t.u1.png)
